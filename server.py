@@ -12,6 +12,7 @@ app = Flask(__name__)
 def home():
   return "This is the home page"
 
+@app.route('/get_filters', methods=['POST'])
 @app.route('/get_filter', methods=['POST'])
 def get_filter():
   # recieve the image and get the json filters and send them back to the user
@@ -21,13 +22,15 @@ def get_filter():
   image_path = os.path.join(UPLOAD_FOLDER, file.filename) # create image path
   file.save(image_path) # save the image on the server
 
-  model = config_gemini()
-  result = request_gemini(model, image_path)
-
-  if os.path.exists(image_path):
-    os.remove(image_path)
-
-  return jsonify(result)
+  try:
+    model = config_gemini()
+    result = request_gemini(model, image_path)
+    return jsonify(result)
+  except Exception as error:
+    return jsonify({"error": str(error)}), 502
+  finally:
+    if os.path.exists(image_path):
+      os.remove(image_path)
 
 @app.route('/get_image', methods=['POST'])
 def get_image():
@@ -44,13 +47,18 @@ def get_image():
   try:
     filters = json.loads(filters_json)
   except Exception as error:
-    return jsonify({'error': error}), 401
+    return jsonify({'error': str(error)}), 400
 
   image_path = os.path.join(UPLOAD_FOLDER, file.filename)
   file.save(image_path)
 
-  filter_changes, suggestion_description = break_down_filter(filters_json)
-  edited_image = apply_filter(filter_changes, image_path)
+  try:
+    filter_changes = filters['filters'] if isinstance(filters, dict) else filters
+    edited_image = apply_filter(filter_changes, image_path)
+  except Exception as error:
+    if os.path.exists(image_path):
+      os.remove(image_path)
+    return jsonify({'error': str(error)}), 400
 
   buffer = BytesIO()
   edited_image.save(buffer, format="JPEG")

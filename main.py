@@ -29,10 +29,14 @@ def config_gemini():
         "top_p": 0.95,
         "top_k": 64,
         "max_output_tokens": 8192,
-        "response_mime_type": "text/plain"
+        "response_mime_type": "application/json"
     }
 
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        generation_config=generation_config,
+    )
 
     return model
 
@@ -51,7 +55,7 @@ def request_gemini(model, image_path):
             "Significantly enhance this image with larger and more noticeable adjustments"
             "I'm open to editing this image, here is the json structure of how you should give editing feedback"
             'MAKE SURE YOUR OUTPUT IS EXCLUSIVELY JSON DATA THAT CAN BE DECODED AND YOU ONLY CHANGE values AND NOT key!'
-            '{"filters": [{"filter_type": "brightness", "factor": 1.05},{"filter_type": "contrast", "factor": 1.1}, {"filter_type": "color", "factor": 1.05 }{"filter_type": "sharpness", "factor": 1.05}],"suggestion": "A brief description of the filter\'s effect and how the image improves using the filter" }'
+            '{"filters": [{"filter_type": "brightness", "factor": 1.05},{"filter_type": "contrast", "factor": 1.1}, {"filter_type": "color", "factor": 1.05 }, {"filter_type": "sharpness", "factor": 1.05}],"suggestion": "A brief description of the filter\'s effect and how the image improves using the filter" }'
         ]
     }])
 
@@ -60,8 +64,20 @@ def request_gemini(model, image_path):
     )
     response = response.text.replace("```JSON",
                                      "").replace("```json",
-                                                 "").replace("```", "")
-    response = eval(response)
+                                                 "").replace("```", "").strip()
+    response = json.loads(response)
+    if isinstance(response, list):
+        response = {f"Filter {index + 1}": value for index, value in enumerate(response)}
+    if isinstance(response, dict) and "filters" in response:
+        response = {"Filter 1": response}
+    if not isinstance(response, dict):
+        raise ValueError("Gemini response must be a JSON object or list")
+
+    for filter_name, filter_data in response.items():
+        if not isinstance(filter_data, dict):
+            raise ValueError(f"{filter_name} must be an object")
+        break_down_filter(filter_data)
+
     print()
     print(response)
     print()
@@ -97,8 +113,13 @@ def apply_filter(filters, image_path, save=False, output_path=None):
 def break_down_filter(result):
     #{"Filter Changes":
     #{"filters": [{"filter_type": "brightness", "factor": 1.05},{"filter_type": "contrast", "factor": 1.1}, {"filter_type": "color", "factor": 1.05 }{"filter_type": "sharpness", "factor": 1.05}],"enhancement":"what value to increase or decrease in percent based on the factor that you suggest","suggestion": "A brief description of the filter\'s effect and how the image improves using the filter" },}
+    if not isinstance(result, dict):
+        raise ValueError("filter data must be a JSON object")
     filter_changes = result['filters']
     suggestion_description = result['suggestion']
+
+    if not isinstance(filter_changes, list):
+        raise ValueError("filters must be a list")
 
     return filter_changes, suggestion_description
 
