@@ -61,6 +61,8 @@ def get_image():
     return jsonify({'error': str(error)}), 400
 
   buffer = BytesIO()
+  if edited_image.mode != 'RGB':
+    edited_image = edited_image.convert('RGB')
   edited_image.save(buffer, format="JPEG")
 
   image_bytes = buffer.getvalue()
